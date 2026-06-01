@@ -1,161 +1,149 @@
 package com.mohammed.pdfreader.viewmodel
 
-import android.content.Context
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.mohammed.pdfreader.utils.FileManager
 import com.mohammed.pdfreader.utils.PdfUtils
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
-import java.io.File
 import javax.inject.Inject
 
-sealed class OperationState {
-    object Idle : OperationState()
-    object Loading : OperationState()
-    data class Success(val outputFile: File, val message: String) : OperationState()
-    data class Error(val message: String) : OperationState()
+enum class PdfOperation {
+    COMPRESS, ENCRYPT, DECRYPT, MERGE, SPLIT,
+    ROTATE, EXTRACT_PAGES, DELETE_PAGES, CONVERT_TO_IMAGES
 }
+
+data class PdfOperationState(
+    val isProcessing: Boolean = false,
+    val progress: Int = 0,
+    val resultUri: Uri? = null,
+    val error: String? = null,
+    val successMessage: String? = null,
+    val currentOperation: PdfOperation? = null
+)
 
 @HiltViewModel
 class PdfOperationsViewModel @Inject constructor(
-    private val pdfUtils: PdfUtils,
-    private val fileManager: FileManager
+    private val pdfUtils: PdfUtils
 ) : ViewModel() {
 
-    private val _operationState = MutableStateFlow<OperationState>(OperationState.Idle)
-    val operationState: StateFlow<OperationState> = _operationState.asStateFlow()
+    private val _state = MutableStateFlow(PdfOperationState())
+    val state: StateFlow<PdfOperationState> = _state.asStateFlow()
 
-    private val _progress = MutableStateFlow(0f)
-    val progress: StateFlow<Float> = _progress.asStateFlow()
-
-    // ===== Compress =====
-    fun compressPdf(inputUri: Uri, quality: Int = 80) {
+    fun compressPdf(inputUri: Uri, quality: PdfUtils.CompressionQuality) {
         viewModelScope.launch {
-            _operationState.value = OperationState.Loading
-            _progress.value = 0f
+            _state.update { it.copy(isProcessing = true, currentOperation = PdfOperation.COMPRESS, error = null) }
             try {
-                val outDir = pdfUtils.getOutputDir()
-                val outFile = File(outDir, "compressed_${System.currentTimeMillis()}.pdf")
-                val success = pdfUtils.compressPdf(inputUri, outFile, quality)
-                _progress.value = 1f
-                if (success) {
-                    _operationState.value = OperationState.Success(
-                        outFile,
-                        "تم ضغط الملف بنجاح — الحجم الجديد: ${fileManager.formatSize(outFile.length())}"
+                val result = pdfUtils.compressPdf(inputUri, quality) { progress ->
+                    _state.update { it.copy(progress = progress) }
+                }
+                _state.update {
+                    it.copy(
+                        isProcessing = false,
+                        resultUri = result,
+                        successMessage = "تم الضغط بنجاح!",
+                        progress = 100
                     )
-                } else {
-                    _operationState.value = OperationState.Error("فشل ضغط الملف")
                 }
             } catch (e: Exception) {
-                _operationState.value = OperationState.Error(e.message ?: "خطأ غير متوقع")
+                _state.update { it.copy(isProcessing = false, error = "فشل الضغط: ${e.message}") }
             }
         }
     }
 
-    // ===== Merge =====
-    fun mergePdfs(inputUris: List<Uri>) {
+    fun encryptPdf(inputUri: Uri, password: String) {
         viewModelScope.launch {
-            _operationState.value = OperationState.Loading
+            _state.update { it.copy(isProcessing = true, currentOperation = PdfOperation.ENCRYPT, error = null) }
             try {
-                val outDir = pdfUtils.getOutputDir()
-                val outFile = File(outDir, "merged_${System.currentTimeMillis()}.pdf")
-                val success = pdfUtils.mergePdfs(inputUris, outFile)
-                if (success) {
-                    _operationState.value = OperationState.Success(outFile, "تم دمج ${inputUris.size} ملفات بنجاح")
-                } else {
-                    _operationState.value = OperationState.Error("فشل دمج الملفات")
+                val result = pdfUtils.encryptPdf(inputUri, password)
+                _state.update {
+                    it.copy(isProcessing = false, resultUri = result, successMessage = "تم التشفير بنجاح!")
                 }
             } catch (e: Exception) {
-                _operationState.value = OperationState.Error(e.message ?: "خطأ")
+                _state.update { it.copy(isProcessing = false, error = "فشل التشفير: ${e.message}") }
             }
         }
     }
 
-    // ===== Split =====
-    fun splitPdf(inputUri: Uri, ranges: List<IntRange>) {
+    fun decryptPdf(inputUri: Uri, password: String) {
         viewModelScope.launch {
-            _operationState.value = OperationState.Loading
+            _state.update { it.copy(isProcessing = true, currentOperation = PdfOperation.DECRYPT, error = null) }
             try {
-                val outDir = File(pdfUtils.getOutputDir(), "split_${System.currentTimeMillis()}")
-                val files = pdfUtils.splitPdf(inputUri, outDir, ranges)
-                if (files.isNotEmpty()) {
-                    _operationState.value = OperationState.Success(
-                        files.first(),
-                        "تم تقسيم الملف إلى ${files.size} أجزاء في ${outDir.absolutePath}"
+                val result = pdfUtils.decryptPdf(inputUri, password)
+                _state.update {
+                    it.copy(isProcessing = false, resultUri = result, successMessage = "تم فك التشفير بنجاح!")
+                }
+            } catch (e: Exception) {
+                _state.update { it.copy(isProcessing = false, error = "كلمة المرور خاطئة أو فشل فك التشفير") }
+            }
+        }
+    }
+
+    fun mergePdfs(uris: List<Uri>) {
+        viewModelScope.launch {
+            _state.update { it.copy(isProcessing = true, currentOperation = PdfOperation.MERGE, error = null) }
+            try {
+                val result = pdfUtils.mergePdfs(uris) { progress ->
+                    _state.update { it.copy(progress = progress) }
+                }
+                _state.update {
+                    it.copy(isProcessing = false, resultUri = result, successMessage = "تم الدمج بنجاح!")
+                }
+            } catch (e: Exception) {
+                _state.update { it.copy(isProcessing = false, error = "فشل الدمج: ${e.message}") }
+            }
+        }
+    }
+
+    fun splitPdf(inputUri: Uri, fromPage: Int, toPage: Int) {
+        viewModelScope.launch {
+            _state.update { it.copy(isProcessing = true, currentOperation = PdfOperation.SPLIT, error = null) }
+            try {
+                val result = pdfUtils.splitPdf(inputUri, fromPage, toPage)
+                _state.update {
+                    it.copy(isProcessing = false, resultUri = result, successMessage = "تم التقسيم بنجاح!")
+                }
+            } catch (e: Exception) {
+                _state.update { it.copy(isProcessing = false, error = "فشل التقسيم: ${e.message}") }
+            }
+        }
+    }
+
+    fun rotatePdf(inputUri: Uri, degrees: Int, pageIndex: Int = -1) {
+        viewModelScope.launch {
+            _state.update { it.copy(isProcessing = true, currentOperation = PdfOperation.ROTATE, error = null) }
+            try {
+                val result = pdfUtils.rotatePdf(inputUri, degrees, pageIndex)
+                _state.update {
+                    it.copy(isProcessing = false, resultUri = result, successMessage = "تم التدوير بنجاح!")
+                }
+            } catch (e: Exception) {
+                _state.update { it.copy(isProcessing = false, error = "فشل التدوير: ${e.message}") }
+            }
+        }
+    }
+
+    fun convertToImages(inputUri: Uri, quality: Int = 85) {
+        viewModelScope.launch {
+            _state.update { it.copy(isProcessing = true, currentOperation = PdfOperation.CONVERT_TO_IMAGES, error = null) }
+            try {
+                val results = pdfUtils.convertToImages(inputUri, quality) { progress ->
+                    _state.update { it.copy(progress = progress) }
+                }
+                _state.update {
+                    it.copy(
+                        isProcessing = false,
+                        successMessage = "تم التحويل! ${results.size} صورة"
                     )
-                } else {
-                    _operationState.value = OperationState.Error("فشل تقسيم الملف")
                 }
             } catch (e: Exception) {
-                _operationState.value = OperationState.Error(e.message ?: "خطأ")
+                _state.update { it.copy(isProcessing = false, error = "فشل التحويل: ${e.message}") }
             }
         }
     }
 
-    // ===== Rotate =====
-    fun rotatePdf(inputUri: Uri, degrees: Float, pageIndices: List<Int>? = null) {
-        viewModelScope.launch {
-            _operationState.value = OperationState.Loading
-            try {
-                val outDir = pdfUtils.getOutputDir()
-                val outFile = File(outDir, "rotated_${System.currentTimeMillis()}.pdf")
-                val success = pdfUtils.rotatePages(inputUri, outFile, degrees, pageIndices)
-                if (success) {
-                    _operationState.value = OperationState.Success(outFile, "تم تدوير الصفحات بنجاح")
-                } else {
-                    _operationState.value = OperationState.Error("فشل تدوير الصفحات")
-                }
-            } catch (e: Exception) {
-                _operationState.value = OperationState.Error(e.message ?: "خطأ")
-            }
-        }
-    }
-
-    // ===== Convert to images =====
-    fun convertToImages(inputUri: Uri, dpi: Int = 150) {
-        viewModelScope.launch {
-            _operationState.value = OperationState.Loading
-            try {
-                val outDir = File(pdfUtils.getOutputDir(), "images_${System.currentTimeMillis()}")
-                val files = pdfUtils.pdfToImages(inputUri, outDir, dpi = dpi)
-                if (files.isNotEmpty()) {
-                    _operationState.value = OperationState.Success(
-                        files.first(),
-                        "تم تحويل ${files.size} صفحة إلى صور في ${outDir.absolutePath}"
-                    )
-                } else {
-                    _operationState.value = OperationState.Error("فشل تحويل الملف")
-                }
-            } catch (e: Exception) {
-                _operationState.value = OperationState.Error(e.message ?: "خطأ")
-            }
-        }
-    }
-
-    // ===== Convert images to PDF =====
-    fun convertImagesToPdf(imageUris: List<Uri>) {
-        viewModelScope.launch {
-            _operationState.value = OperationState.Loading
-            try {
-                val outDir = pdfUtils.getOutputDir()
-                val outFile = File(outDir, "from_images_${System.currentTimeMillis()}.pdf")
-                val success = pdfUtils.imagesToPdf(imageUris, outFile)
-                if (success) {
-                    _operationState.value = OperationState.Success(outFile, "تم إنشاء PDF من ${imageUris.size} صور")
-                } else {
-                    _operationState.value = OperationState.Error("فشل إنشاء PDF")
-                }
-            } catch (e: Exception) {
-                _operationState.value = OperationState.Error(e.message ?: "خطأ")
-            }
-        }
-    }
-
-    fun resetState() {
-        _operationState.value = OperationState.Idle
-        _progress.value = 0f
+    fun clearState() {
+        _state.update { PdfOperationState() }
     }
 }
