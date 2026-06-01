@@ -1,10 +1,7 @@
 package com.mohammed.pdfreader.di
 
 import android.content.Context
-import androidx.hilt.work.HiltWorkerFactory
-import androidx.startup.Initializer
-import androidx.work.Configuration
-import androidx.work.WorkManager
+import com.mohammed.pdfreader.utils.*
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -18,7 +15,49 @@ object WorkerModule {
 
     @Provides
     @Singleton
-    fun provideWorkManager(@ApplicationContext context: Context): WorkManager {
-        return WorkManager.getInstance(context)
-    }
+    fun provideAIManager(
+        @ApplicationContext context: Context
+    ): AIManager = AIManager(context)
+
+    @Provides
+    @Singleton
+    fun providePdfUtils(
+        @ApplicationContext context: Context
+    ): PdfUtils = PdfUtils(context)
+
+    @Provides
+    @Singleton
+    fun provideTranslationManager(
+        @ApplicationContext context: Context
+    ): TranslationManager = TranslationManager(context)
+
+    @Provides
+    @Singleton
+    fun provideOcrManager(
+        @ApplicationContext context: Context
+    ): OcrManager = OcrManager(context)
+
+    @Provides
+    @Singleton
+    fun provideFileManager(
+        @ApplicationContext context: Context
+    ): FileManager = FileManager(context)
+
+    @Provides
+    @Singleton
+    fun providePermissionManager(
+        @ApplicationContext context: Context
+    ): PermissionManager = PermissionManager(context)
+
+    @Provides
+    @Singleton
+    fun provideBiometricManager(
+        @ApplicationContext context: Context
+    ): BiometricManager = BiometricManager(context)
+
+    @Provides
+    @Singleton
+    fun provideSettingsDataStore(
+        @ApplicationContext context: Context
+    ): SettingsDataStore = SettingsDataStore(context)
 }
