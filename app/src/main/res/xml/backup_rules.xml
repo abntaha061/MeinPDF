@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <include domain="sharedpref" path="." />
+    <include domain="database" path="pdf_reader_db" />
+    <exclude domain="database" path="pdf_reader_db-shm" />
+    <exclude domain="database" path="pdf_reader_db-wal" />
+</full-backup-content>
